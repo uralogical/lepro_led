@@ -161,6 +161,12 @@ class LeproLedLight(LightEntity):
         "d5": "000003E803E8",
         "d30": "000023C1",
     }
+    B1_RGB_D30_BY_HUE_FALLBACK = {
+        0: "000023C1",
+        60: "000024A1",
+        120: "00002401",
+        240: "00002461",
+    }
     # Effect constants
     EFFECT_NONE = "none"
     EFFECT_SOLID = "solid"
@@ -219,6 +225,7 @@ class LeproLedLight(LightEntity):
         self._normalizing_effect = False
         self._b1_static_state = {}
         self._b1_rgb_state = {}
+        self._b1_rgb_d30_by_hue = dict(self.B1_RGB_D30_BY_HUE_FALLBACK)
         # store 25 segments internally; main light mirrors segment 0
         self._segment_colors = [(255, 255, 255)] * 25  # Default all white
         self._sensitivity = 50  # For music mode
@@ -305,6 +312,29 @@ class LeproLedLight(LightEntity):
 
         if rgb_state.get("d2", self._b1_rgb_state.get("d2")) == 1:
             self._b1_rgb_state.update(rgb_state)
+            d5 = rgb_state.get("d5")
+            d30 = rgb_state.get("d30")
+            if isinstance(d5, str) and len(d5) >= 4 and d30:
+                try:
+                    hue = int(d5[:4], 16)
+                except ValueError:
+                    hue = None
+                if hue is not None:
+                    self._b1_rgb_d30_by_hue[hue] = d30
+
+    def _get_b1_rgb_d30_for_hue(self, hue_deg):
+        """Return the closest known d30 value for a hue in B1 RGB mode."""
+        if not self._b1_rgb_d30_by_hue:
+            return self.B1_RGB_STATE_FALLBACK["d30"]
+
+        nearest_hue = min(
+            self._b1_rgb_d30_by_hue,
+            key=lambda candidate: min(
+                abs(candidate - hue_deg),
+                360 - abs(candidate - hue_deg),
+            ),
+        )
+        return self._b1_rgb_d30_by_hue[nearest_hue]
 
     def _build_b1_rgb_payload(self, rgb_color):
         """Build an experimental B1 RGB payload from an RGB color."""
@@ -317,6 +347,7 @@ class LeproLedLight(LightEntity):
         suffix = str(payload.get("d5", self.B1_RGB_STATE_FALLBACK["d5"]))[4:]
         payload["d2"] = 1
         payload["d5"] = f"{hue_deg:04X}{suffix}"
+        payload["d30"] = self._get_b1_rgb_d30_for_hue(hue_deg)
         return payload
             
     def _map_device_brightness(self, device_brightness):
