@@ -43,7 +43,7 @@ class LeproLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = dict(user_input)
             
             # Don't include persistent_mac here - it will be generated later
-            return self.async_create_entry(title="Lepro LED", data=data)
+            return self.async_create_entry(title="Lepro LED Improvements", data=data)
 
         return self.async_show_form(
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
