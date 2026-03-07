@@ -1,9 +1,9 @@
 {
-  "title": "Lepro LED Strip",
+  "title": "Lepro LED Improvements",
   "config": {
     "step": {
       "user": {
-        "title": "Connect Lepro LED",
+        "title": "Connect Lepro LED Improvements",
         "description": "Sign in with your Lepro account. A virtual MAC is generated to authenticate with the cloud.",
         "data": {
           "account": "Account (email/phone)",
@@ -26,7 +26,7 @@
   "entity": {
     "light": {
         "strip": {
-          "name": "LED strip",
+          "name": "Lepro LED",
           "state_attributes": {
             "effect": {
               "name": "Effect",
