@@ -226,6 +226,7 @@ class LeproLedLight(LightEntity):
         self._b1_static_state = {}
         self._b1_rgb_state = {}
         self._b1_rgb_d30_by_hue = dict(self.B1_RGB_D30_BY_HUE_FALLBACK)
+        self._b1_rgb_d30_by_hue_value = {}
         # store 25 segments internally; main light mirrors segment 0
         self._segment_colors = [(255, 255, 255)] * 25  # Default all white
         self._sensitivity = 50  # For music mode
@@ -314,16 +315,30 @@ class LeproLedLight(LightEntity):
             self._b1_rgb_state.update(rgb_state)
             d5 = rgb_state.get("d5")
             d30 = rgb_state.get("d30")
-            if isinstance(d5, str) and len(d5) >= 4 and d30:
+            if isinstance(d5, str) and len(d5) >= 12 and d30:
                 try:
                     hue = int(d5[:4], 16)
+                    value = int(d5[8:12], 16)
                 except ValueError:
                     hue = None
+                    value = None
                 if hue is not None:
                     self._b1_rgb_d30_by_hue[hue] = d30
+                if hue is not None and value is not None:
+                    self._b1_rgb_d30_by_hue_value[(hue, value)] = d30
 
-    def _get_b1_rgb_d30_for_hue(self, hue_deg):
-        """Return the closest known d30 value for a hue in B1 RGB mode."""
+    def _get_b1_rgb_d30(self, hue_deg, value_hex):
+        """Return the closest known d30 value for a hue/value pair in B1 RGB mode."""
+        if self._b1_rgb_d30_by_hue_value:
+            nearest_key = min(
+                self._b1_rgb_d30_by_hue_value,
+                key=lambda candidate: (
+                    min(abs(candidate[0] - hue_deg), 360 - abs(candidate[0] - hue_deg)),
+                    abs(candidate[1] - value_hex),
+                ),
+            )
+            return self._b1_rgb_d30_by_hue_value[nearest_key]
+
         if not self._b1_rgb_d30_by_hue:
             return self.B1_RGB_STATE_FALLBACK["d30"]
 
@@ -346,10 +361,11 @@ class LeproLedLight(LightEntity):
         hue_deg = int(round((hue * 360) % 360))
         brightness_scale = max(0.0, min(1.0, brightness / 255 if brightness is not None else 1.0))
         sat_hex = f"{int(round(sat * 1000)):04X}"
-        val_hex = f"{int(round(val * brightness_scale * 1000)):04X}"
+        val_int = int(round(val * brightness_scale * 1000))
+        val_hex = f"{val_int:04X}"
         payload["d2"] = 1
         payload["d5"] = f"{hue_deg:04X}{sat_hex}{val_hex}"
-        payload["d30"] = self._get_b1_rgb_d30_for_hue(hue_deg)
+        payload["d30"] = self._get_b1_rgb_d30(hue_deg, val_int)
         return payload
             
     def _map_device_brightness(self, device_brightness):
