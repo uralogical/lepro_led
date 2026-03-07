@@ -241,6 +241,16 @@ class LeproLedLight(LightEntity):
         ]
         # main light color is the first segment color
         self._attr_rgb_color = self._segment_colors[0]  # First segment as primary color
+
+    @property
+    def is_b1_model(self):
+        """Return True when the device model/series indicates a B1 bulb."""
+        model = str(self._attr_device_info.get("model", "")).upper()
+        return "B1" in model
+
+    def _should_skip_d50_for_static_mode(self):
+        """Use a reduced payload for B1 bulbs to test whether d50 causes flashing."""
+        return self.is_b1_model and self._effect in (self.EFFECT_NONE, self.EFFECT_SOLID)
             
     def _map_device_brightness(self, device_brightness):
         """Map device brightness (100-1000) to HA brightness (0-255)"""
@@ -600,15 +610,19 @@ class LeproLedLight(LightEntity):
 
     async def _send_effect_command(self):
         """Send command for effect modes"""
-        # Generate d50 string with current colors/groups
-        d50_str = self._generate_d50_string()
-        
         payload = {
             "d1": 1,
             "d2": 2,
-            "d50": d50_str,
             "d52": self._map_ha_brightness(self._brightness)
         }
+        if self._should_skip_d50_for_static_mode():
+            _LOGGER.info(
+                "B1 static-mode experiment for %s (%s): sending payload without d50",
+                self.name,
+                self._did,
+            )
+        else:
+            payload["d50"] = self._generate_d50_string()
         await self._send_mqtt_command(payload)
 
     async def async_turn_off(self, **kwargs):
@@ -629,6 +643,13 @@ class LeproLedLight(LightEntity):
         try:
             await self._mqtt_client.publish(topic, json.dumps(full_payload))
             _LOGGER.debug("Sent MQTT command: %s - %s", topic, full_payload)
+            if self.is_b1_model:
+                _LOGGER.info(
+                    "B1 command for %s (%s): %s",
+                    self.name,
+                    self._did,
+                    full_payload,
+                )
         except Exception as e:
             _LOGGER.error("Failed to send MQTT command: %s", e)
             
@@ -646,6 +667,8 @@ class LeproLedLight(LightEntity):
         try:
             await self._mqtt_client.publish(topic, payload)
             _LOGGER.debug("Requested state update for %s", self.name)
+            if self.is_b1_model:
+                _LOGGER.info("B1 state request for %s (%s): %s", self.name, self._did, payload)
         except Exception as e:
             _LOGGER.error("Failed to request state update: %s", e)
 
@@ -950,6 +973,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # Handle different message types
             if message_type in ["rpt", "set", "getr"]:
                 data = payload.get('d', {})
+                if entity.is_b1_model:
+                    b1_fields = {
+                        key: data.get(key)
+                        for key in ["d1", "d2", "d3", "d4", "d5", "d30", "d50", "d52", "d60", "online"]
+                        if key in data
+                    }
+                    _LOGGER.info(
+                        "B1 state update for %s (%s) topic=%s: %s",
+                        entity.name,
+                        did,
+                        topic,
+                        b1_fields,
+                    )
                 
                 # Update basic state
                 if 'd1' in data:
@@ -1006,6 +1042,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
                 _LOGGER.debug("Updated state for %s: on=%s, mode=%s, effect=%s, brightness=%s, speed=%s, rgb=%s, sensitivity=%s", 
                              entity.name, entity._is_on, entity._mode, entity._effect, entity._brightness, entity._speed, entity._segment_colors[0], entity._sensitivity)
+                if entity.is_b1_model:
+                    _LOGGER.info(
+                        "B1 normalized state for %s (%s): on=%s mode=%s effect=%s brightness=%s rgb=%s",
+                        entity.name,
+                        did,
+                        entity._is_on,
+                        entity._mode,
+                        entity._effect,
+                        entity._brightness,
+                        entity._segment_colors[0],
+                    )
                     
         except Exception as e:
             _LOGGER.error("Error processing MQTT message: %s", e)
