@@ -336,17 +336,19 @@ class LeproLedLight(LightEntity):
         )
         return self._b1_rgb_d30_by_hue[nearest_hue]
 
-    def _build_b1_rgb_payload(self, rgb_color):
-        """Build an experimental B1 RGB payload from an RGB color."""
+    def _build_b1_rgb_payload(self, rgb_color, brightness):
+        """Build an experimental B1 RGB payload from an RGB color and brightness."""
         payload = dict(self.B1_RGB_STATE_FALLBACK)
         payload.update(self._b1_rgb_state)
 
         r, g, b = [int(max(0, min(255, c))) for c in rgb_color]
-        hue, _sat, _val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        hue, sat, val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
         hue_deg = int(round((hue * 360) % 360))
-        suffix = str(payload.get("d5", self.B1_RGB_STATE_FALLBACK["d5"]))[4:]
+        brightness_scale = max(0.0, min(1.0, brightness / 255 if brightness is not None else 1.0))
+        sat_hex = f"{int(round(sat * 1000)):04X}"
+        val_hex = f"{int(round(val * brightness_scale * 1000)):04X}"
         payload["d2"] = 1
-        payload["d5"] = f"{hue_deg:04X}{suffix}"
+        payload["d5"] = f"{hue_deg:04X}{sat_hex}{val_hex}"
         payload["d30"] = self._get_b1_rgb_d30_for_hue(hue_deg)
         return payload
             
@@ -718,7 +720,7 @@ class LeproLedLight(LightEntity):
             "d1": 1,
             "d52": self._map_ha_brightness(self._brightness),
         }
-        payload.update(self._build_b1_rgb_payload(rgb_color))
+        payload.update(self._build_b1_rgb_payload(rgb_color, self._brightness))
         _LOGGER.info("B1 rgb-mode payload for %s (%s): %s", self.name, self._did, payload)
         await self._send_mqtt_command(payload)
 
