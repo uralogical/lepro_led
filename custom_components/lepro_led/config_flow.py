@@ -9,6 +9,11 @@ REGION_OPTIONS = [
     selector.SelectOptionDict(value="na", label="North America"),
     selector.SelectOptionDict(value="fe", label="Far East"),
 ]
+LANGUAGE_OPTIONS = [
+    selector.SelectOptionDict(value="en", label="English"),
+    selector.SelectOptionDict(value="it", label="Italiano"),
+    selector.SelectOptionDict(value="ja", label="Japanese"),
+]
 
 DATA_SCHEMA = vol.Schema({
     vol.Required("account"): str,
@@ -19,7 +24,12 @@ DATA_SCHEMA = vol.Schema({
             mode=selector.SelectSelectorMode.DROPDOWN,
         )
     ),
-    vol.Optional("language", default="en"): str,
+    vol.Optional("language", default="en"): selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=LANGUAGE_OPTIONS,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    ),
 })
 
 class LeproLedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
