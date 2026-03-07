@@ -9,6 +9,7 @@ import os
 import hashlib
 import re
 import numpy as np
+import colorsys
 from .const import DOMAIN, REGIONS, LOGIN_PATH, FAMILY_LIST_PATH, USER_PROFILE_PATH, DEVICE_LIST_PATH, SWITCH_API_PATH
 from aiomqtt import Client, MqttError
 import aiofiles
@@ -155,6 +156,11 @@ class LeproLedLight(LightEntity):
         "d5": "001C03E803E8",
         "d30": "00002151",
     }
+    B1_RGB_STATE_FALLBACK = {
+        "d2": 1,
+        "d5": "000003E803E8",
+        "d30": "000023C1",
+    }
     # Effect constants
     EFFECT_NONE = "none"
     EFFECT_SOLID = "solid"
@@ -212,6 +218,7 @@ class LeproLedLight(LightEntity):
         self._speed = 50  # Default speed (0-100)
         self._normalizing_effect = False
         self._b1_static_state = {}
+        self._b1_rgb_state = {}
         # store 25 segments internally; main light mirrors segment 0
         self._segment_colors = [(255, 255, 255)] * 25  # Default all white
         self._sensitivity = 50  # For music mode
@@ -282,6 +289,35 @@ class LeproLedLight(LightEntity):
         payload = dict(self.B1_STATIC_STATE_FALLBACK)
         payload.update(self._b1_static_state)
         return payload
+
+    def _update_b1_rgb_state(self, source: dict):
+        """Store the latest known-good B1 RGB-mode fields."""
+        if not self.is_b1_model:
+            return
+
+        rgb_state = {
+            key: source[key]
+            for key in ["d2", "d5", "d30"]
+            if key in source
+        }
+        if not rgb_state:
+            return
+
+        if rgb_state.get("d2", self._b1_rgb_state.get("d2")) == 1:
+            self._b1_rgb_state.update(rgb_state)
+
+    def _build_b1_rgb_payload(self, rgb_color):
+        """Build an experimental B1 RGB payload from an RGB color."""
+        payload = dict(self.B1_RGB_STATE_FALLBACK)
+        payload.update(self._b1_rgb_state)
+
+        r, g, b = [int(max(0, min(255, c))) for c in rgb_color]
+        hue, _sat, _val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        hue_deg = int(round((hue * 360) % 360))
+        suffix = str(payload.get("d5", self.B1_RGB_STATE_FALLBACK["d5"]))[4:]
+        payload["d2"] = 1
+        payload["d5"] = f"{hue_deg:04X}{suffix}"
+        return payload
             
     def _map_device_brightness(self, device_brightness):
         """Map device brightness (100-1000) to HA brightness (0-255)"""
@@ -344,7 +380,9 @@ class LeproLedLight(LightEntity):
         # Update state optimistically
         self._is_on = True
         self._brightness = brightness
-        if self.is_b1_model and effect == self.EFFECT_NONE:
+        if self.is_b1_model and ATTR_RGB_COLOR in kwargs:
+            self._mode = 1
+        elif self.is_b1_model and effect == self.EFFECT_NONE:
             self._mode = self._get_b1_static_payload()["d2"]
         else:
             self._mode = 2
@@ -361,7 +399,9 @@ class LeproLedLight(LightEntity):
             self._effect = self.EFFECT_NONE
         
         # Send command based on effect
-        if send_effect in self.SPECIAL_EFFECTS:
+        if self.is_b1_model and ATTR_RGB_COLOR in kwargs:
+            await self._send_b1_rgb_command(rgb_color)
+        elif send_effect in self.SPECIAL_EFFECTS:
             # special effects use d2=3 (d60)
             await self._send_special_effect_command(send_effect)
         else:
@@ -640,6 +680,16 @@ class LeproLedLight(LightEntity):
             _LOGGER.error("Failed to normalize %s to solid mode: %s", self.name, e)
         finally:
             self._normalizing_effect = False
+
+    async def _send_b1_rgb_command(self, rgb_color):
+        """Send an experimental B1 RGB payload derived from hue."""
+        payload = {
+            "d1": 1,
+            "d52": self._map_ha_brightness(self._brightness),
+        }
+        payload.update(self._build_b1_rgb_payload(rgb_color))
+        _LOGGER.info("B1 rgb-mode payload for %s (%s): %s", self.name, self._did, payload)
+        await self._send_mqtt_command(payload)
 
 
     async def _send_effect_command(self):
@@ -1037,6 +1087,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     entity._attr_brightness = entity._brightness
 
                 entity._update_b1_static_state(data)
+                entity._update_b1_rgb_state(data)
                 
                 # Update effect and colors
                 if 'd50' in data:
