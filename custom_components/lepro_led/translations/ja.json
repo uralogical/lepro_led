@@ -26,7 +26,7 @@
   "entity": {
     "light": {
       "strip": {
-        "name": "Lepro LED",
+        "name": "Lepro LED Improvements",
         "state_attributes": {
           "effect": {
             "name": "エフェクト",
