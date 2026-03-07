@@ -148,7 +148,13 @@ async def async_login(session, account, password, mac, login_url, api_host, lang
 
 
 class LeproLedLight(LightEntity):
-    B1_STATIC_D30_FALLBACK = "000010A1"
+    B1_STATIC_STATE_FALLBACK = {
+        "d2": 0,
+        "d3": 920,
+        "d4": 263,
+        "d5": "001C03E803E8",
+        "d30": "00002151",
+    }
     # Effect constants
     EFFECT_NONE = "none"
     EFFECT_SOLID = "solid"
@@ -205,7 +211,7 @@ class LeproLedLight(LightEntity):
         self._effect = self.EFFECT_NONE
         self._speed = 50  # Default speed (0-100)
         self._normalizing_effect = False
-        self._b1_static_d30 = None
+        self._b1_static_state = {}
         # store 25 segments internally; main light mirrors segment 0
         self._segment_colors = [(255, 255, 255)] * 25  # Default all white
         self._sensitivity = 50  # For music mode
@@ -219,8 +225,7 @@ class LeproLedLight(LightEntity):
             self._brightness = 255
         if "d60" in device:
             self._sensitivity = self._parse_d60(device["d60"])
-        if "d30" in device:
-            self._b1_static_d30 = device["d30"]
+        self._update_b1_static_state(device)
         
         # Entity attributes
         self._attr_supported_features = LightEntityFeature.EFFECT
@@ -256,9 +261,27 @@ class LeproLedLight(LightEntity):
         """Use a reduced payload for B1 bulbs to test whether d50 causes flashing."""
         return self.is_b1_model and self._effect in (self.EFFECT_NONE, self.EFFECT_SOLID)
 
-    def _get_b1_static_d30(self):
-        """Return the best-known d30 value for B1 static mode."""
-        return self._b1_static_d30 or self.B1_STATIC_D30_FALLBACK
+    def _update_b1_static_state(self, source: dict):
+        """Store the latest known-good B1 static-mode fields."""
+        if not self.is_b1_model:
+            return
+
+        static_state = {
+            key: source[key]
+            for key in ["d2", "d3", "d4", "d5", "d30"]
+            if key in source
+        }
+        if not static_state:
+            return
+
+        if static_state.get("d2", self._b1_static_state.get("d2")) == 0:
+            self._b1_static_state.update(static_state)
+
+    def _get_b1_static_payload(self):
+        """Return the best-known payload for B1 static mode."""
+        payload = dict(self.B1_STATIC_STATE_FALLBACK)
+        payload.update(self._b1_static_state)
+        return payload
             
     def _map_device_brightness(self, device_brightness):
         """Map device brightness (100-1000) to HA brightness (0-255)"""
@@ -321,7 +344,10 @@ class LeproLedLight(LightEntity):
         # Update state optimistically
         self._is_on = True
         self._brightness = brightness
-        self._mode = 2
+        if self.is_b1_model and effect == self.EFFECT_NONE:
+            self._mode = self._get_b1_static_payload()["d2"]
+        else:
+            self._mode = 2
         
         # When color changes on the main light, set all segments to the same color
         if ATTR_RGB_COLOR in kwargs:
@@ -608,7 +634,7 @@ class LeproLedLight(LightEntity):
         self._normalizing_effect = True
         try:
             self._effect = self.EFFECT_NONE
-            self._mode = 2
+            self._mode = self._get_b1_static_payload()["d2"] if self.is_b1_model else 2
             await self._send_effect_command()
         except Exception as e:
             _LOGGER.error("Failed to normalize %s to solid mode: %s", self.name, e)
@@ -620,18 +646,18 @@ class LeproLedLight(LightEntity):
         """Send command for effect modes"""
         payload = {
             "d1": 1,
-            "d2": 2,
             "d52": self._map_ha_brightness(self._brightness)
         }
         if self._should_skip_d50_for_static_mode():
-            payload["d30"] = self._get_b1_static_d30()
+            payload.update(self._get_b1_static_payload())
             _LOGGER.info(
-                "B1 static-mode experiment for %s (%s): sending payload without d50 using d30=%s",
+                "B1 static-mode payload for %s (%s): %s",
                 self.name,
                 self._did,
-                payload["d30"],
+                payload,
             )
         else:
+            payload["d2"] = 2
             payload["d50"] = self._generate_d50_string()
         await self._send_mqtt_command(payload)
 
@@ -1010,8 +1036,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     entity._brightness = entity._map_device_brightness(data['d52'])
                     entity._attr_brightness = entity._brightness
 
-                if 'd30' in data:
-                    entity._b1_static_d30 = data['d30']
+                entity._update_b1_static_state(data)
                 
                 # Update effect and colors
                 if 'd50' in data:
