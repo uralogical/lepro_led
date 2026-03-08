@@ -1065,6 +1065,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             if not entity:
                 return
+
+            if entity.is_b1_model:
+                _LOGGER.info(
+                    "B1 raw MQTT for %s (%s) topic=%s type=%s payload=%s",
+                    entity.name,
+                    did,
+                    topic,
+                    message_type,
+                    payload,
+                )
                 
             # Handle different message types
             if message_type in ["rpt", "set", "getr"]:
