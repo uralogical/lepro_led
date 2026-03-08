@@ -285,10 +285,15 @@ class LeproLedLight(LightEntity):
         if static_state.get("d2", self._b1_static_state.get("d2")) == 0:
             self._b1_static_state.update(static_state)
 
-    def _get_b1_static_payload(self):
+    def _get_b1_static_payload(self, brightness=None):
         """Return the best-known payload for B1 static mode."""
         payload = dict(self.B1_STATIC_STATE_FALLBACK)
         payload.update(self._b1_static_state)
+        if brightness is not None:
+            d5 = payload.get("d5")
+            if isinstance(d5, str) and len(d5) == 12:
+                value_hex = f"{int(round(max(0.0, min(1.0, brightness / 255)) * 1000)):04X}"
+                payload["d5"] = f"{d5[:8]}{value_hex}"
         return payload
 
     def _update_b1_rgb_state(self, source: dict):
@@ -700,7 +705,7 @@ class LeproLedLight(LightEntity):
         self._normalizing_effect = True
         try:
             self._effect = self.EFFECT_NONE
-            self._mode = self._get_b1_static_payload()["d2"] if self.is_b1_model else 2
+            self._mode = self._get_b1_static_payload(self._brightness)["d2"] if self.is_b1_model else 2
             await self._send_effect_command()
         except Exception as e:
             _LOGGER.error("Failed to normalize %s to solid mode: %s", self.name, e)
@@ -721,7 +726,7 @@ class LeproLedLight(LightEntity):
             "d52": self._map_ha_brightness(self._brightness)
         }
         if self._should_skip_d50_for_static_mode():
-            payload.update(self._get_b1_static_payload())
+            payload.update(self._get_b1_static_payload(self._brightness))
             _LOGGER.info(
                 "B1 static-mode payload for %s (%s): %s",
                 self.name,
