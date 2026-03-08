@@ -158,14 +158,9 @@ class LeproLedLight(LightEntity):
     }
     B1_RGB_STATE_FALLBACK = {
         "d2": 1,
+        "d3": 1000,
+        "d4": 0,
         "d5": "000003E803E8",
-        "d30": "000023C1",
-    }
-    B1_RGB_D30_BY_HUE_FALLBACK = {
-        0: "000023C1",
-        60: "000024A1",
-        120: "00002401",
-        240: "00002461",
     }
     # Effect constants
     EFFECT_NONE = "none"
@@ -225,8 +220,6 @@ class LeproLedLight(LightEntity):
         self._normalizing_effect = False
         self._b1_static_state = {}
         self._b1_rgb_state = {}
-        self._b1_rgb_d30_by_hue = dict(self.B1_RGB_D30_BY_HUE_FALLBACK)
-        self._b1_rgb_d30_by_hue_value = {}
         # store 25 segments internally; main light mirrors segment 0
         self._segment_colors = [(255, 255, 255)] * 25  # Default all white
         self._sensitivity = 50  # For music mode
@@ -305,7 +298,7 @@ class LeproLedLight(LightEntity):
 
         rgb_state = {
             key: source[key]
-            for key in ["d2", "d5", "d30"]
+            for key in ["d2", "d3", "d4", "d5"]
             if key in source
         }
         if not rgb_state:
@@ -313,43 +306,6 @@ class LeproLedLight(LightEntity):
 
         if rgb_state.get("d2", self._b1_rgb_state.get("d2")) == 1:
             self._b1_rgb_state.update(rgb_state)
-            d5 = rgb_state.get("d5")
-            d30 = rgb_state.get("d30")
-            if isinstance(d5, str) and len(d5) >= 12 and d30:
-                try:
-                    hue = int(d5[:4], 16)
-                    value = int(d5[8:12], 16)
-                except ValueError:
-                    hue = None
-                    value = None
-                if hue is not None:
-                    self._b1_rgb_d30_by_hue[hue] = d30
-                if hue is not None and value is not None:
-                    self._b1_rgb_d30_by_hue_value[(hue, value)] = d30
-
-    def _get_b1_rgb_d30(self, hue_deg, value_hex):
-        """Return the closest known d30 value for a hue/value pair in B1 RGB mode."""
-        if self._b1_rgb_d30_by_hue_value:
-            nearest_key = min(
-                self._b1_rgb_d30_by_hue_value,
-                key=lambda candidate: (
-                    min(abs(candidate[0] - hue_deg), 360 - abs(candidate[0] - hue_deg)),
-                    abs(candidate[1] - value_hex),
-                ),
-            )
-            return self._b1_rgb_d30_by_hue_value[nearest_key]
-
-        if not self._b1_rgb_d30_by_hue:
-            return self.B1_RGB_STATE_FALLBACK["d30"]
-
-        nearest_hue = min(
-            self._b1_rgb_d30_by_hue,
-            key=lambda candidate: min(
-                abs(candidate - hue_deg),
-                360 - abs(candidate - hue_deg),
-            ),
-        )
-        return self._b1_rgb_d30_by_hue[nearest_hue]
 
     def _build_b1_rgb_payload(self, rgb_color, brightness):
         """Build an experimental B1 RGB payload from an RGB color and brightness."""
@@ -364,8 +320,9 @@ class LeproLedLight(LightEntity):
         val_int = int(round(val * brightness_scale * 1000))
         val_hex = f"{val_int:04X}"
         payload["d2"] = 1
+        payload["d3"] = 1000
+        payload["d4"] = 0
         payload["d5"] = f"{hue_deg:04X}{sat_hex}{val_hex}"
-        payload["d30"] = self._get_b1_rgb_d30(hue_deg, val_int)
         return payload
             
     def _map_device_brightness(self, device_brightness):
@@ -1121,14 +1078,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         topic,
                         b1_fields,
                     )
-                    if any(key in data for key in ["d2", "d5", "d30"]):
+                    if any(key in data for key in ["d2", "d3", "d4", "d5"]):
                         _LOGGER.info(
-                            "B1 RGB sample for %s (%s): d2=%s d5=%s d30=%s",
+                            "B1 RGB sample for %s (%s): d2=%s d3=%s d4=%s d5=%s",
                             entity.name,
                             did,
                             data.get("d2"),
+                            data.get("d3"),
+                            data.get("d4"),
                             data.get("d5"),
-                            data.get("d30"),
                         )
                 
                 # Update basic state
