@@ -719,12 +719,8 @@ class LeproLedLight(LightEntity):
 
     async def _send_effect_command(self):
         """Send command for effect modes"""
-        payload = {
-            "d1": 1,
-            "d52": self._map_ha_brightness(self._brightness)
-        }
         if self._should_skip_d50_for_static_mode():
-            payload.update(self._get_b1_static_payload(self._brightness))
+            payload = self._get_b1_static_payload(self._brightness)
             _LOGGER.info(
                 "B1 static-mode payload for %s (%s): %s",
                 self.name,
@@ -732,6 +728,10 @@ class LeproLedLight(LightEntity):
                 payload,
             )
         else:
+            payload = {
+                "d1": 1,
+                "d52": self._map_ha_brightness(self._brightness)
+            }
             payload["d2"] = 2
             payload["d50"] = self._generate_d50_string()
         await self._send_mqtt_command(payload)
