@@ -320,6 +320,12 @@ class LeproLedLight(LightEntity):
         val_hex = f"{val_int:04X}"
         payload["d5"] = f"{hue_deg:04X}{sat_hex}{val_hex}"
         return payload
+
+    def _is_b1_white_like(self, rgb_color):
+        """Return True when a B1 RGB request is effectively white/gray."""
+        r, g, b = [int(max(0, min(255, c))) for c in rgb_color]
+        _, sat, _ = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        return sat <= 0.05
             
     def _map_device_brightness(self, device_brightness):
         """Map device brightness (100-1000) to HA brightness (0-255)"""
@@ -374,6 +380,19 @@ class LeproLedLight(LightEntity):
         brightness = kwargs.get(ATTR_BRIGHTNESS, self._brightness)
         rgb_color = kwargs.get(ATTR_RGB_COLOR, self._attr_rgb_color)
         requested_rgb_change = ATTR_RGB_COLOR in kwargs
+        requested_brightness_change = ATTR_BRIGHTNESS in kwargs
+        b1_static_color_request = (
+            self.is_b1_model
+            and requested_rgb_change
+            and self._is_b1_white_like(rgb_color)
+        )
+        b1_rgb_brightness_request = (
+            self.is_b1_model
+            and requested_brightness_change
+            and not requested_rgb_change
+            and self._mode == 1
+            and not self._is_b1_white_like(self._attr_rgb_color)
+        )
         requested_effect = kwargs.get(ATTR_EFFECT)
         effect = requested_effect if requested_effect is not None else self._effect
         send_effect = self.EFFECT_SOLID if effect == self.EFFECT_NONE else effect
@@ -383,7 +402,7 @@ class LeproLedLight(LightEntity):
         # Update state optimistically
         self._is_on = True
         self._brightness = brightness
-        if self.is_b1_model and requested_rgb_change:
+        if self.is_b1_model and (b1_rgb_brightness_request or (requested_rgb_change and not b1_static_color_request)):
             self._mode = 1
         elif self.is_b1_model and effect == self.EFFECT_NONE:
             self._mode = self._get_b1_static_payload()["d2"]
@@ -403,8 +422,11 @@ class LeproLedLight(LightEntity):
             self._effect = self.EFFECT_NONE
         
         # Send command based on effect
-        if self.is_b1_model and requested_rgb_change:
-            await self._send_b1_rgb_command(rgb_color)
+        if b1_static_color_request:
+            self._effect = self.EFFECT_NONE
+            await self._send_effect_command()
+        elif self.is_b1_model and (requested_rgb_change or b1_rgb_brightness_request):
+            await self._send_b1_rgb_command(self._attr_rgb_color)
         elif send_effect in self.SPECIAL_EFFECTS:
             # special effects use d2=3 (d60)
             await self._send_special_effect_command(send_effect)
