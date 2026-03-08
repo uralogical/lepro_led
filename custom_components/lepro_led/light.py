@@ -1121,6 +1121,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         topic,
                         b1_fields,
                     )
+                    if any(key in data for key in ["d2", "d5", "d30"]):
+                        _LOGGER.info(
+                            "B1 RGB sample for %s (%s): d2=%s d5=%s d30=%s",
+                            entity.name,
+                            did,
+                            data.get("d2"),
+                            data.get("d5"),
+                            data.get("d30"),
+                        )
                 
                 # Update basic state
                 if 'd1' in data:
