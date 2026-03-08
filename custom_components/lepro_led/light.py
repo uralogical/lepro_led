@@ -308,20 +308,16 @@ class LeproLedLight(LightEntity):
             self._b1_rgb_state.update(rgb_state)
 
     def _build_b1_rgb_payload(self, rgb_color, brightness):
-        """Build an experimental B1 RGB payload from an RGB color and brightness."""
-        payload = dict(self.B1_RGB_STATE_FALLBACK)
-        payload.update(self._b1_rgb_state)
+        """Build a B1 RGB payload that matches the official app format."""
+        payload = {"d2": 1}
 
         r, g, b = [int(max(0, min(255, c))) for c in rgb_color]
         hue, sat, val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
         hue_deg = int(round((hue * 360) % 360))
         brightness_scale = max(0.0, min(1.0, brightness / 255 if brightness is not None else 1.0))
-        sat_hex = f"{int(round(sat * 1000)):04X}"
+        sat_hex = "03E8"
         val_int = int(round(val * brightness_scale * 1000))
         val_hex = f"{val_int:04X}"
-        payload["d2"] = 1
-        payload["d3"] = 1000
-        payload["d4"] = 0
         payload["d5"] = f"{hue_deg:04X}{sat_hex}{val_hex}"
         return payload
             
@@ -387,16 +383,19 @@ class LeproLedLight(LightEntity):
         # Update state optimistically
         self._is_on = True
         self._brightness = brightness
-        if self.is_b1_model and effect == self.EFFECT_NONE:
+        if self.is_b1_model and requested_rgb_change:
+            self._mode = 1
+        elif self.is_b1_model and effect == self.EFFECT_NONE:
             self._mode = self._get_b1_static_payload()["d2"]
         else:
             self._mode = 2
         
         # When color changes on the main light, set all segments to the same color
-        if requested_rgb_change and not self.is_b1_model:
+        if requested_rgb_change:
             self._attr_rgb_color = rgb_color
-            # set all segment colors to the main color
-            self._segment_colors = [tuple(int(c) for c in rgb_color)] * 25
+            if not self.is_b1_model:
+                # set all segment colors to the main color
+                self._segment_colors = [tuple(int(c) for c in rgb_color)] * 25
         
         if ATTR_EFFECT in kwargs:
             self._effect = effect
@@ -405,13 +404,8 @@ class LeproLedLight(LightEntity):
         
         # Send command based on effect
         if self.is_b1_model and requested_rgb_change:
-            _LOGGER.info(
-                "Ignoring B1 RGB change for %s (%s) until the app payload format is understood",
-                self.name,
-                self._did,
-            )
-
-        if send_effect in self.SPECIAL_EFFECTS:
+            await self._send_b1_rgb_command(rgb_color)
+        elif send_effect in self.SPECIAL_EFFECTS:
             # special effects use d2=3 (d60)
             await self._send_special_effect_command(send_effect)
         else:
@@ -692,12 +686,8 @@ class LeproLedLight(LightEntity):
             self._normalizing_effect = False
 
     async def _send_b1_rgb_command(self, rgb_color):
-        """Send an experimental B1 RGB payload derived from hue."""
-        payload = {
-            "d1": 1,
-            "d52": self._map_ha_brightness(self._brightness),
-        }
-        payload.update(self._build_b1_rgb_payload(rgb_color, self._brightness))
+        """Send a B1 RGB payload using the same fields the official app writes."""
+        payload = self._build_b1_rgb_payload(rgb_color, self._brightness)
         _LOGGER.info("B1 rgb-mode payload for %s (%s): %s", self.name, self._did, payload)
         await self._send_mqtt_command(payload)
 
