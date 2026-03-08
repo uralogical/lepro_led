@@ -377,6 +377,7 @@ class LeproLedLight(LightEntity):
         # Determine new values from kwargs
         brightness = kwargs.get(ATTR_BRIGHTNESS, self._brightness)
         rgb_color = kwargs.get(ATTR_RGB_COLOR, self._attr_rgb_color)
+        requested_rgb_change = ATTR_RGB_COLOR in kwargs
         requested_effect = kwargs.get(ATTR_EFFECT)
         effect = requested_effect if requested_effect is not None else self._effect
         send_effect = self.EFFECT_SOLID if effect == self.EFFECT_NONE else effect
@@ -386,15 +387,13 @@ class LeproLedLight(LightEntity):
         # Update state optimistically
         self._is_on = True
         self._brightness = brightness
-        if self.is_b1_model and ATTR_RGB_COLOR in kwargs:
-            self._mode = 1
-        elif self.is_b1_model and effect == self.EFFECT_NONE:
+        if self.is_b1_model and effect == self.EFFECT_NONE:
             self._mode = self._get_b1_static_payload()["d2"]
         else:
             self._mode = 2
         
         # When color changes on the main light, set all segments to the same color
-        if ATTR_RGB_COLOR in kwargs:
+        if requested_rgb_change and not self.is_b1_model:
             self._attr_rgb_color = rgb_color
             # set all segment colors to the main color
             self._segment_colors = [tuple(int(c) for c in rgb_color)] * 25
@@ -405,9 +404,14 @@ class LeproLedLight(LightEntity):
             self._effect = self.EFFECT_NONE
         
         # Send command based on effect
-        if self.is_b1_model and ATTR_RGB_COLOR in kwargs:
-            await self._send_b1_rgb_command(rgb_color)
-        elif send_effect in self.SPECIAL_EFFECTS:
+        if self.is_b1_model and requested_rgb_change:
+            _LOGGER.info(
+                "Ignoring B1 RGB change for %s (%s) until the app payload format is understood",
+                self.name,
+                self._did,
+            )
+
+        if send_effect in self.SPECIAL_EFFECTS:
             # special effects use d2=3 (d60)
             await self._send_special_effect_command(send_effect)
         else:
