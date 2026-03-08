@@ -13,14 +13,17 @@ This fork keeps the original cloud-based integration approach, and adds practica
 
 ## ✨ Features
 
+### Core integration
 - Login with your **Lepro** account and discover cloud-connected devices.
 - Control lights from Home Assistant with on/off, brightness, color, and effects.
+- Sensors for device and connection state exposed by the integration.
+
+### Improvements in this fork
 - Improved naming in Home Assistant and HACS: **Lepro LED Improvements**.
 - `effect: none` support for normal lighting.
 - Region selector with clearer labels.
 - `language` support including `ja`.
 - Extra protocol investigation and targeted handling for **B1** bulbs.
-- Sensors for device and connection state exposed by the integration.
 
 ---
 
