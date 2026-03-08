@@ -151,9 +151,8 @@ async def async_login(session, account, password, mac, login_url, api_host, lang
 class LeproLedLight(LightEntity):
     B1_STATIC_STATE_FALLBACK = {
         "d2": 0,
-        "d3": 920,
-        "d4": 263,
-        "d5": "001C03E803E8",
+        "d3": 1000,
+        "d4": 500,
         "d30": "00002151",
     }
     B1_RGB_STATE_FALLBACK = {
@@ -276,7 +275,7 @@ class LeproLedLight(LightEntity):
 
         static_state = {
             key: source[key]
-            for key in ["d2", "d3", "d4", "d5", "d30"]
+            for key in ["d2", "d3", "d4", "d30"]
             if key in source
         }
         if not static_state:
@@ -290,10 +289,9 @@ class LeproLedLight(LightEntity):
         payload = dict(self.B1_STATIC_STATE_FALLBACK)
         payload.update(self._b1_static_state)
         if brightness is not None:
-            d5 = payload.get("d5")
-            if isinstance(d5, str) and len(d5) == 12:
-                value_hex = f"{int(round(max(0.0, min(1.0, brightness / 255)) * 1000)):04X}"
-                payload["d5"] = f"{d5[:8]}{value_hex}"
+            payload["d3"] = int(round(max(0.0, min(1.0, brightness / 255)) * 1000))
+            payload["d4"] = int(payload.get("d4", self.B1_STATIC_STATE_FALLBACK["d4"]))
+        payload.pop("d5", None)
         return payload
 
     def _update_b1_rgb_state(self, source: dict):
