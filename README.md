@@ -32,7 +32,7 @@ This fork keeps the original cloud-based integration approach, and adds practica
 ### Option A — HACS (recommended)
 1. Make sure you have [HACS](https://hacs.xyz/) installed in Home Assistant.
 2. In Home Assistant: **HACS → Integrations → ⋮ (three dots) → Custom repositories**.  
-   Add `https://github.com/uralogical/lepro_led` as **Category: Integration**.
+   Add `https://github.com/uralogical/lepro_led_improvements` as **Category: Integration**.
 3. Find **Lepro LED Improvements** in HACS and click **Download**.
 4. **Restart** Home Assistant.
 
