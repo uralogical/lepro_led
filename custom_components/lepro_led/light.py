@@ -1127,7 +1127,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     entity._mode = data['d2']
                 
                 # Update brightness
-                if 'd52' in data:
+                if entity.is_b1_model and entity._mode == 0 and 'd3' in data:
+                    entity._brightness = entity._map_device_brightness(data['d3'])
+                    entity._attr_brightness = entity._brightness
+                elif 'd52' in data:
                     entity._brightness = entity._map_device_brightness(data['d52'])
                     entity._attr_brightness = entity._brightness
 
